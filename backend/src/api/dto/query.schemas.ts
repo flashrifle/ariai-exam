@@ -5,6 +5,7 @@
  * limit 류는 반드시 상한을 둔다 — 무제한 조회는 DB와 응답 크기를 동시에 망가뜨린다.
  */
 import { z } from 'zod';
+import { DAY_MS, MANUAL_MAX_RANGE_DAYS } from '../../backfill/backfill.constants';
 import {
   BASE_INTERVAL,
   SUPPORTED_INTERVALS,
@@ -19,8 +20,13 @@ export const BACKFILL_JOB_LIMIT_DEFAULT = 50;
 export const BACKFILL_JOB_LIMIT_MAX = 200;
 export const COLLECTOR_EVENT_LIMIT_DEFAULT = 100;
 export const COLLECTOR_EVENT_LIMIT_MAX = 500;
-/** 수동 백필 1회 요청의 최대 구간 (31일). 무한 백필로 레이트리밋을 태우지 않기 위함. */
-export const MANUAL_BACKFILL_MAX_RANGE_MS = 31 * 24 * 60 * 60 * 1000;
+/**
+ * 수동 백필 1회 요청의 최대 구간. 무한 백필로 레이트리밋을 태우지 않기 위함.
+ *
+ * 백필 서비스의 상수에서 파생시킨다 — 두 계층이 각자 숫자를 들고 있으면
+ * 그 사이 값(예: 30.5일)이 zod 는 통과하고 서비스에서 거절되어 500 이 났다.
+ */
+export const MANUAL_BACKFILL_MAX_RANGE_MS = MANUAL_MAX_RANGE_DAYS * DAY_MS;
 /** 미래 시각 허용 오차 (시계 오차 흡수용). */
 export const FUTURE_SKEW_TOLERANCE_MS = 60_000;
 
@@ -83,7 +89,9 @@ export type CollectorEventsQuery = z.infer<typeof collectorEventsQuerySchema>;
 export const manualBackfillBodySchema = z
   .object({
     symbol: symbolSchema,
-    interval: intervalSchema,
+    // 백필은 저장 단위(1m)만 받는다. 5m/15m/1h 는 조회 시 SQL 로 파생되므로 백필 대상이 아니다.
+    // 서비스 계층도 동일하게 제한하므로 여기서 좁혀야 400 으로 거절된다.
+    interval: z.literal(BASE_INTERVAL),
     from: isoDateSchema,
     to: isoDateSchema,
   })
@@ -107,7 +115,10 @@ export const manualBackfillBodySchema = z
       ctx.addIssue({ code: 'custom', message: 'from 은 to 보다 이전이어야 합니다' });
     }
     if (toMs - fromMs > MANUAL_BACKFILL_MAX_RANGE_MS) {
-      ctx.addIssue({ code: 'custom', message: '한 번에 요청할 수 있는 구간은 최대 31일입니다' });
+      ctx.addIssue({
+        code: 'custom',
+        message: `한 번에 요청할 수 있는 구간은 최대 ${MANUAL_MAX_RANGE_DAYS}일입니다`,
+      });
     }
     if (toMs > Date.now() + FUTURE_SKEW_TOLERANCE_MS) {
       ctx.addIssue({ code: 'custom', message: 'to 는 미래 시각일 수 없습니다' });

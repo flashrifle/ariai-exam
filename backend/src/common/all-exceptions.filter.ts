@@ -39,10 +39,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const request = ctx.getRequest<Request>();
     const response = ctx.getResponse<Response>();
 
-    this.logger.error(
-      `[${request.method} ${request.originalUrl ?? request.url}] ${status} — ${clientMessage}`,
-      describeError(exception),
-    );
+    // 4xx 는 클라이언트 입력 오류이므로 warn 으로 남긴다.
+    // 전부 error 로 올리면 정상적인 입력 실수가 장애 알림을 오염시켜, 진짜 5xx 가 묻힌다.
+    const line = `[${request.method} ${request.originalUrl ?? request.url}] ${status} — ${clientMessage}`;
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      this.logger.error(line, describeError(exception));
+    } else {
+      this.logger.warn(line);
+    }
 
     // SSE 등 이미 스트리밍이 시작된 응답은 헤더/본문을 덮어쓸 수 없다.
     if (response.headersSent) {
