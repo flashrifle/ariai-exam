@@ -101,11 +101,22 @@ export function useTickPressure(symbol: TradingSymbol, windowMs = 60_000): TickP
         else sellQuote += sample.quote;
       }
       const total = buyQuote + sellQuote;
-      setPressure({
-        buyQuote,
-        sellQuote,
-        ratio: total > 0 ? buyQuote / total : null,
-        count: pruned.length,
+      setPressure((prev) => {
+        // 다른 심볼 틱만 들어온 배치에서는 값이 그대로다. 같은 참조를 돌려주면
+        // React 가 렌더를 건너뛴다 (초당 8회 헛렌더 방지).
+        if (
+          prev.buyQuote === buyQuote &&
+          prev.sellQuote === sellQuote &&
+          prev.count === pruned.length
+        ) {
+          return prev;
+        }
+        return {
+          buyQuote,
+          sellQuote,
+          ratio: total > 0 ? buyQuote / total : null,
+          count: pruned.length,
+        };
       });
     },
   });

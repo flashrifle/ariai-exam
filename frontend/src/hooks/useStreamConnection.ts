@@ -26,6 +26,8 @@ export interface ConnectionView {
   lastEventAt: number | null;
   isStale: boolean;
   invalidCount: number;
+  /** 상대 시각 계산에 쓸 현재 시각. 훅 안의 타이머와 같은 값이다. */
+  now: number;
 }
 
 /**
@@ -50,6 +52,7 @@ export function useStreamConnection(): ConnectionView {
       lastEventAt,
       isStale,
       invalidCount: snapshot.invalidCount,
+      now,
     };
   }
 
@@ -60,8 +63,9 @@ export function useStreamConnection(): ConnectionView {
       label: '재연결 중',
       detail: `${snapshot.attempt}회 시도 · ${snapshot.lastError ?? '원인 불명'}`,
       lastEventAt,
-      isStale: false,
+      isStale,
       invalidCount: snapshot.invalidCount,
+      now,
     };
   }
 
@@ -72,8 +76,9 @@ export function useStreamConnection(): ConnectionView {
       label: '연결 중',
       detail: null,
       lastEventAt,
-      isStale: false,
+      isStale,
       invalidCount: snapshot.invalidCount,
+      now,
     };
   }
 
@@ -85,5 +90,6 @@ export function useStreamConnection(): ConnectionView {
     lastEventAt,
     isStale: false,
     invalidCount: snapshot.invalidCount,
+    now,
   };
 }

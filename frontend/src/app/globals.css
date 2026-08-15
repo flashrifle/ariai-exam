@@ -32,7 +32,6 @@
   --color-amber: oklch(82% 0.145 78); /* 터미널 액센트 · 주의 */
   --color-bull: oklch(78% 0.15 158); /* 상승 · 정상 */
   --color-bear: oklch(68% 0.19 24); /* 하락 · 장애 */
-  --color-info: oklch(75% 0.11 236); /* 정보 · 중립 지표 */
 
   /* ── 타이포 ────────────────────────────────────────────────── */
   --font-sans:
@@ -131,6 +130,8 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+    /* 그리드 셀 높이를 채워 같은 행의 패널 바닥선이 맞는다 (Swiss 정렬) */
+    height: 100%;
     background-color: var(--color-ink-900);
     border: 1px solid var(--color-hairline);
     border-radius: var(--radius-panel);

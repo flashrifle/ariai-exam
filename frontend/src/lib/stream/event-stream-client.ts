@@ -54,6 +54,11 @@ export type StreamSourceFactory = (url: string) => StreamSourceLike;
 const FLUSH_INTERVAL_MS = 120;
 /** 백그라운드 탭 등으로 플러시가 밀릴 때 유지할 최대 틱 수. */
 const MAX_TICK_BUFFER = 240;
+/**
+ * 봉 버퍼 상한. 심볼 2 × 인터벌 4 = 8키가 정상 범위지만,
+ * 탭이 백그라운드로 내려가 rAF 가 멈추면 openTime 이 바뀔 때마다 키가 늘어난다.
+ */
+const MAX_CANDLE_BUFFER = 64;
 /** 지수 백오프 지연 단계 (ms). */
 const BACKOFF_STEPS_MS = [500, 1_000, 2_000, 4_000, 8_000, 15_000] as const;
 
@@ -237,6 +242,8 @@ export class EventStreamClient {
   }
 
   private handleTick(event: Event): void {
+    // stop() 이후 브라우저 큐에 남아 있던 이벤트가 늦게 도착해도 무시한다.
+    if (this.stopped) return;
     const parsedJson = this.parse(event);
     if (!parsedJson.ok) return;
     const parsed = tickEventSchema.safeParse(parsedJson.value);
@@ -253,6 +260,8 @@ export class EventStreamClient {
   }
 
   private handleCandle(event: Event): void {
+    // stop() 이후 브라우저 큐에 남아 있던 이벤트가 늦게 도착해도 무시한다.
+    if (this.stopped) return;
     const parsedJson = this.parse(event);
     if (!parsedJson.ok) return;
     const parsed = candleEventSchema.safeParse(parsedJson.value);
@@ -263,10 +272,18 @@ export class EventStreamClient {
     this.markAlive();
     const { symbol, interval, candle } = parsed.data;
     this.candleBuffer.set(`${symbol}:${interval}:${candle.openTime}`, parsed.data);
+    // 백그라운드 탭에서 rAF 가 멈춘 사이 openTime 키가 계속 늘어나는 것을 막는다.
+    while (this.candleBuffer.size > MAX_CANDLE_BUFFER) {
+      const oldest = this.candleBuffer.keys().next();
+      if (oldest.done) break;
+      this.candleBuffer.delete(oldest.value);
+    }
     this.scheduleFlush();
   }
 
   private handleMetrics(event: Event): void {
+    // stop() 이후 브라우저 큐에 남아 있던 이벤트가 늦게 도착해도 무시한다.
+    if (this.stopped) return;
     const parsedJson = this.parse(event);
     if (!parsedJson.ok) return;
     const parsed = metricsEventSchema.safeParse(parsedJson.value);
@@ -279,6 +296,8 @@ export class EventStreamClient {
   }
 
   private handleOps(event: Event): void {
+    // stop() 이후 브라우저 큐에 남아 있던 이벤트가 늦게 도착해도 무시한다.
+    if (this.stopped) return;
     const parsedJson = this.parse(event);
     if (!parsedJson.ok) return;
     const parsed = opsEventSchema.safeParse(parsedJson.value);

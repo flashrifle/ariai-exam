@@ -1,3 +1,5 @@
+'use client';
+
 import type { ReactNode } from 'react';
 
 import { toErrorDetail, toErrorMessage } from '@/lib/api/client';
@@ -17,7 +19,7 @@ interface BlockProps {
 function Shell({ children, className }: BlockProps) {
   return (
     <div
-      className={`flex min-h-24 flex-col items-start justify-center gap-1.5 px-1 py-4 ${className ?? ''}`}
+      className={`flex min-h-24 flex-col items-start justify-center gap-1.5 px-1 py-4 [&_.label-micro]:whitespace-normal ${className ?? ''}`}
     >
       {children}
     </div>
