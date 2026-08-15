@@ -1,7 +1,17 @@
 /**
  * REST 페이지네이션 커서 로직 테스트 — 네트워크 없이 fetchPage 를 흉내낸다.
  */
-import { computeMaxPages, paginateKlines, readOpenTimeMs } from './rest-paginator';
+import { computeMaxPages, paginateKlines } from './rest-paginator';
+
+/**
+ * openTime 추출은 구현이 아니라 호출부가 주입하는 책임(getOpenTimeMs)이다.
+ * 실제 백필 러너가 REST 튜플에서 하는 것과 같은 방식으로 테스트 헬퍼를 둔다.
+ */
+function readOpenTimeMs(row: unknown): number | null {
+  if (!Array.isArray(row)) return null;
+  const first: unknown = row[0];
+  return typeof first === 'number' && Number.isFinite(first) ? first : null;
+}
 import { MAX_PAGES_HARD_CAP } from './backfill.constants';
 
 const STEP = 60_000;
@@ -39,6 +49,7 @@ describe('paginateKlines', () => {
 
     // Act
     const result = await paginateKlines({
+      getOpenTimeMs: readOpenTimeMs,
       startMs: minute(0),
       endMs: minute(3),
       stepMs: STEP,
@@ -65,6 +76,7 @@ describe('paginateKlines', () => {
 
     // Act
     const result = await paginateKlines({
+      getOpenTimeMs: readOpenTimeMs,
       startMs: minute(0),
       endMs: minute(5),
       stepMs: STEP,
@@ -86,6 +98,7 @@ describe('paginateKlines', () => {
 
     // Act
     const result = await paginateKlines({
+      getOpenTimeMs: readOpenTimeMs,
       startMs: minute(0),
       endMs: minute(100),
       stepMs: STEP,
@@ -107,6 +120,7 @@ describe('paginateKlines', () => {
 
     // Act
     const result = await paginateKlines({
+      getOpenTimeMs: readOpenTimeMs,
       startMs: minute(0),
       endMs: minute(100),
       stepMs: STEP,
@@ -125,6 +139,7 @@ describe('paginateKlines', () => {
       Promise.resolve([['이상한 값', '1'] as readonly unknown[]]);
 
     const result = await paginateKlines({
+      getOpenTimeMs: readOpenTimeMs,
       startMs: minute(0),
       endMs: minute(10),
       stepMs: STEP,
@@ -144,6 +159,7 @@ describe('paginateKlines', () => {
 
     // Act
     const result = await paginateKlines({
+      getOpenTimeMs: readOpenTimeMs,
       startMs: minute(0),
       endMs: minute(1_000_000),
       stepMs: STEP,
@@ -166,6 +182,7 @@ describe('paginateKlines', () => {
 
     // Act
     await paginateKlines({
+      getOpenTimeMs: readOpenTimeMs,
       startMs: minute(0),
       endMs: minute(2),
       stepMs: STEP,
