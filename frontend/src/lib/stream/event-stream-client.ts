@@ -61,6 +61,14 @@ const MAX_TICK_BUFFER = 240;
 const MAX_CANDLE_BUFFER = 64;
 /** 지수 백오프 지연 단계 (ms). */
 const BACKOFF_STEPS_MS = [500, 1_000, 2_000, 4_000, 8_000, 15_000] as const;
+/**
+ * 무수신 판정 임계 (ms). 서버가 15초마다 `ping` 하트비트를 보내므로 그보다 넉넉히 잡는다.
+ *
+ * 이 워치독이 없으면 프록시가 커넥션을 half-open 으로 방치했을 때
+ * EventSource 가 error 를 발생시키지 않아 status 가 영구히 'live' 로 남는다.
+ * 그러면 폴백 폴링도 켜지지 않아 화면이 마지막 값에서 조용히 동결된다.
+ */
+const STALE_AFTER_MS = 25_000;
 
 const IDLE_SNAPSHOT: StreamSnapshot = {
   status: 'idle',
@@ -86,6 +94,8 @@ export class EventStreamClient {
 
   private source: StreamSourceLike | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 무수신 감시 타이머. 이벤트가 올 때마다 재무장된다. */
+  private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
   private rafId: number | null = null;
   private lastFlushAt = 0;
   private stopped = true;
@@ -141,6 +151,7 @@ export class EventStreamClient {
   stop(): void {
     this.stopped = true;
     this.clearRetry();
+    this.clearWatchdog();
     this.cancelFlush();
     this.closeSource();
     this.tickBuffer = [];
@@ -188,6 +199,39 @@ export class EventStreamClient {
     source.addEventListener('candle', (event) => this.handleCandle(event));
     source.addEventListener('metrics', (event) => this.handleMetrics(event));
     source.addEventListener('ops', (event) => this.handleOps(event));
+    // 하트비트. 데이터가 없는 조용한 구간과 연결이 죽은 상태를 구분하는 유일한 신호다.
+    source.addEventListener('ping', () => {
+      if (this.stopped) return;
+      this.markAlive();
+    });
+
+    // 연결 직후에도 무장한다 — 열리기만 하고 아무것도 오지 않는 경우를 잡기 위해서다.
+    this.armWatchdog();
+  }
+
+  /**
+   * 무수신 감시 재무장. 이벤트(하트비트 포함)가 올 때마다 호출된다.
+   *
+   * 임계를 넘기면 연결이 열려 있어도 죽은 것으로 보고 직접 끊은 뒤 재연결한다.
+   * EventSource 는 half-open 커넥션에서 error 를 발생시키지 않으므로,
+   * 우리가 감시하지 않으면 아무도 이 상태를 눈치채지 못한다.
+   */
+  private armWatchdog(): void {
+    this.clearWatchdog();
+    if (this.stopped) return;
+    this.watchdogTimer = setTimeout(() => {
+      this.watchdogTimer = null;
+      if (this.stopped) return;
+      this.closeSource();
+      this.scheduleRetry('스트림 응답이 없어 재연결합니다');
+    }, STALE_AFTER_MS);
+  }
+
+  private clearWatchdog(): void {
+    if (this.watchdogTimer !== null) {
+      clearTimeout(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
   }
 
   private scheduleRetry(message: string): void {
@@ -236,6 +280,8 @@ export class EventStreamClient {
 
   private markAlive(): void {
     this.lastEventAtMs = Date.now();
+    // 살아 있다는 신호가 왔으므로 무수신 감시를 다시 무장한다.
+    this.armWatchdog();
     if (this.snapshot.status !== 'live' || this.snapshot.attempt !== 0) {
       this.patch({ status: 'live', attempt: 0 });
     }
