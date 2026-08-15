@@ -87,13 +87,30 @@ export const manualBackfillBodySchema = z
     from: isoDateSchema,
     to: isoDateSchema,
   })
-  .refine((body) => body.from.getTime() < body.to.getTime(), 'from 은 to 보다 이전이어야 합니다')
-  .refine(
-    (body) => body.to.getTime() - body.from.getTime() <= MANUAL_BACKFILL_MAX_RANGE_MS,
-    '한 번에 요청할 수 있는 구간은 최대 31일입니다',
-  )
-  .refine(
-    (body) => body.to.getTime() <= Date.now() + FUTURE_SKEW_TOLERANCE_MS,
-    'to 는 미래 시각일 수 없습니다',
-  );
+  /**
+   * 구간 관련 교차 검증.
+   *
+   * superRefine 을 쓰는 이유: object 레벨 검사는 하위 필드 검증이 실패해도 실행된다.
+   * from/to 가 파싱되지 않으면 값이 아직 string 이므로 `.getTime()` 호출이 TypeError 를 던지고,
+   * 클라이언트 입력 오류가 400 이 아니라 500 으로 보고된다 (실제로 발생했던 버그).
+   * 따라서 Date 로 변환된 경우에만 구간 검사를 진행한다.
+   */
+  .superRefine((body, ctx) => {
+    if (!(body.from instanceof Date) || !(body.to instanceof Date)) {
+      return;
+    }
+
+    const fromMs = body.from.getTime();
+    const toMs = body.to.getTime();
+
+    if (fromMs >= toMs) {
+      ctx.addIssue({ code: 'custom', message: 'from 은 to 보다 이전이어야 합니다' });
+    }
+    if (toMs - fromMs > MANUAL_BACKFILL_MAX_RANGE_MS) {
+      ctx.addIssue({ code: 'custom', message: '한 번에 요청할 수 있는 구간은 최대 31일입니다' });
+    }
+    if (toMs > Date.now() + FUTURE_SKEW_TOLERANCE_MS) {
+      ctx.addIssue({ code: 'custom', message: 'to 는 미래 시각일 수 없습니다' });
+    }
+  });
 export type ManualBackfillBody = z.infer<typeof manualBackfillBodySchema>;
