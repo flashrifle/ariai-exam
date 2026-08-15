@@ -22,7 +22,9 @@ services:
       TZ: UTC
       PGTZ: UTC
     ports:
-      - '5432:5432'
+      # 호스트에 다른 Postgres 가 5432 를 쓰는 경우가 흔해 기본값을 5434 로 둔다.
+      # POSTGRES_HOST_PORT 로 덮어쓸 수 있다. 컨테이너 내부 포트는 5432 그대로다.
+      - '${POSTGRES_HOST_PORT:-5434}:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
