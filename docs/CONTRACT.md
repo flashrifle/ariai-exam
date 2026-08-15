@@ -29,7 +29,6 @@
 |---|---|
 | REST base | `https://api.binance.com` |
 | 캔들 백필 | `GET /api/v3/klines?symbol=&interval=&startTime=&endTime=&limit=1000` |
-| 과거 체결 | `GET /api/v3/aggTrades?symbol=&startTime=&endTime=&limit=1000` |
 | 서버 시각 | `GET /api/v3/time` |
 | WS base | `wss://stream.binance.com:9443/stream?streams=a/b/c` |
 
@@ -55,7 +54,7 @@ interface KlineRepository {
 
 interface TradeRepository {
   insertManyIgnoreConflict(rows: TradeInsert[]): Promise<number>;
-  latestTradeId(symbol: string): Promise<bigint | null>;
+  latestTradeTime(symbol: string): Promise<Date | null>;
 }
 ```
 

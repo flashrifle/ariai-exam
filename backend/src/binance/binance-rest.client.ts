@@ -13,15 +13,10 @@ import { Logger } from '@nestjs/common';
 import type { SupportedInterval, SupportedSymbol } from '../config/configuration';
 import { BackoffPolicy, computeBackoffMs, DEFAULT_BACKOFF_POLICY } from './backoff';
 import {
-  AGG_TRADES_WEIGHT,
-  aggTradesResponseSchema,
-  BinanceAggTrade,
   BinanceKline,
   klinesResponseSchema,
   klinesWeightForLimit,
-  mapAggTrade,
   mapKlineTuple,
-  MAX_AGG_TRADES_LIMIT,
   MAX_KLINES_LIMIT,
   SERVER_TIME_WEIGHT,
   serverTimeResponseSchema,
@@ -79,14 +74,6 @@ export interface GetKlinesParams {
   startTime?: Date | number;
   endTime?: Date | number;
   /** 1~1000. 기본 1000 (백필 최대 페이지). */
-  limit?: number;
-}
-
-export interface GetAggTradesParams {
-  symbol: SupportedSymbol;
-  /** 주의: Binance는 startTime~endTime 간격을 1시간 이내로 제한한다. */
-  startTime?: Date | number;
-  endTime?: Date | number;
   limit?: number;
 }
 
@@ -149,19 +136,6 @@ export class BinanceRestClient {
     const json = await this.requestJson('/api/v3/klines', query, klinesWeightForLimit(limit));
     const tuples = klinesResponseSchema.parse(json);
     return tuples.map((tuple) => mapKlineTuple(tuple, params.interval));
-  }
-
-  /** 과거 체결(집계) 조회. */
-  async getAggTrades(params: GetAggTradesParams): Promise<BinanceAggTrade[]> {
-    const limit = params.limit ?? MAX_AGG_TRADES_LIMIT;
-    this.assertLimit(limit, MAX_AGG_TRADES_LIMIT);
-    const query: Record<string, string> = {
-      symbol: params.symbol,
-      limit: String(limit),
-      ...timeRangeQuery(params.startTime, params.endTime),
-    };
-    const json = await this.requestJson('/api/v3/aggTrades', query, AGG_TRADES_WEIGHT);
-    return aggTradesResponseSchema.parse(json).map(mapAggTrade);
   }
 
   /** 서버 시각 조회 — 로컬 시계와 거래소 시계의 드리프트 측정용. */

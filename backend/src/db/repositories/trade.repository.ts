@@ -51,18 +51,6 @@ export class TradeRepository {
     return inserted;
   }
 
-  /** 심볼별 최신 trade_id. 한 건도 없으면 null (갭 복구 시작점 판단용). */
-  async latestTradeId(symbol: string): Promise<bigint | null> {
-    const rows = await this.db
-      .select({ tradeId: trades.tradeId })
-      .from(trades)
-      .where(eq(trades.symbol, symbol))
-      .orderBy(desc(trades.tradeId))
-      .limit(1);
-
-    return rows[0]?.tradeId ?? null;
-  }
-
   /** 심볼별 최신 체결 시각. 수집 지연(lag) 계산에 쓴다. */
   async latestTradeTime(symbol: string): Promise<Date | null> {
     const rows = await this.db

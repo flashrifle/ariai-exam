@@ -1,9 +1,7 @@
 import {
-  aggTradeSchema,
   isMinuteAligned,
   klinesWeightForLimit,
   klineTupleSchema,
-  mapAggTrade,
   mapKlineTuple,
 } from './binance-rest.schemas';
 
@@ -58,30 +56,6 @@ describe('klineTupleSchema / mapKlineTuple', () => {
     misaligned[0] = 1699999980001;
     const tuple = klineTupleSchema.parse(misaligned);
     expect(() => mapKlineTuple(tuple, '1m')).toThrow('분 경계');
-  });
-});
-
-describe('aggTradeSchema / mapAggTrade', () => {
-  test('체결 응답을 도메인 객체로 변환한다 (ID는 bigint)', () => {
-    const raw = aggTradeSchema.parse({
-      a: 123456,
-      p: '100.50000000',
-      q: '2.00000000',
-      f: 100,
-      l: 105,
-      T: 1700000000000,
-      m: true,
-      M: true, // 스키마에 없는 필드는 무시된다
-    });
-    const trade = mapAggTrade(raw);
-
-    expect(trade.aggTradeId).toBe(123456n);
-    expect(trade.price).toBe('100.50000000');
-    expect(trade.qty).toBe('2.00000000');
-    expect(trade.firstTradeId).toBe(100n);
-    expect(trade.lastTradeId).toBe(105n);
-    expect(trade.tradeTime).toEqual(new Date(1700000000000));
-    expect(trade.isBuyerMaker).toBe(true);
   });
 });
 

@@ -80,46 +80,6 @@ export function mapKlineTuple(tuple: KlineTuple, interval: string): BinanceKline
   };
 }
 
-// ── aggTrades ───────────────────────────────────────────────────────────
-
-/** GET /api/v3/aggTrades 응답의 체결 1건. 필요 필드만 파싱한다 (나머지는 무시). */
-export const aggTradeSchema = z.object({
-  a: z.number().int(), // 집계 체결 ID
-  p: decimalStringSchema, // 가격
-  q: decimalStringSchema, // 수량
-  f: z.number().int(), // 첫 개별 체결 ID
-  l: z.number().int(), // 마지막 개별 체결 ID
-  T: z.number().int(), // 체결 시각 (epoch ms)
-  m: z.boolean(), // 매수자가 maker인지
-});
-
-export const aggTradesResponseSchema = z.array(aggTradeSchema);
-
-export type AggTradeRaw = z.infer<typeof aggTradeSchema>;
-
-/** REST 체결 도메인 객체. ID는 bigint (DB trade_id 컬럼과 동일 표현). */
-export interface BinanceAggTrade {
-  aggTradeId: bigint;
-  price: string;
-  qty: string;
-  firstTradeId: bigint;
-  lastTradeId: bigint;
-  tradeTime: Date;
-  isBuyerMaker: boolean;
-}
-
-export function mapAggTrade(raw: AggTradeRaw): BinanceAggTrade {
-  return {
-    aggTradeId: BigInt(raw.a),
-    price: raw.p,
-    qty: raw.q,
-    firstTradeId: BigInt(raw.f),
-    lastTradeId: BigInt(raw.l),
-    tradeTime: new Date(raw.T),
-    isBuyerMaker: raw.m,
-  };
-}
-
 // ── server time ─────────────────────────────────────────────────────────
 
 export const serverTimeResponseSchema = z.object({
@@ -129,9 +89,6 @@ export const serverTimeResponseSchema = z.object({
 // ── weight 규칙 (계약 3절) ───────────────────────────────────────────────
 
 export const MAX_KLINES_LIMIT = 1_000;
-export const MAX_AGG_TRADES_LIMIT = 1_000;
-/** /api/v3/aggTrades 고정 weight. */
-export const AGG_TRADES_WEIGHT = 2;
 /** /api/v3/time 고정 weight. */
 export const SERVER_TIME_WEIGHT = 1;
 
