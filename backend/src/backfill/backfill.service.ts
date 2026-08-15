@@ -12,9 +12,13 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { AppEvents, type GapDetectedPayload } from '../common/events';
+import {
+  AppEvents,
+  type GapDetectedPayload,
+  type StreamStatusPayload,
+} from '../common/events';
 import type { BackfillPort, ManualBackfillResult } from '../common/ports';
 import {
   BASE_INTERVAL,
@@ -47,6 +51,7 @@ import { ceilToStep, countCandles, floorToStep, rangesOverlap } from './gap-math
 import { emitBackfillProgress } from './progress-emitter';
 import { runWithConcurrency } from './async-util';
 import { resolveStartupPlan } from './startup-plan';
+import { parseSymbolFromKlineStreamKey, readIsoDate } from './stream-status.util';
 
 @Injectable()
 // BackfillPort 를 명시적으로 구현한다 — 포트와 구현이 어긋나면 런타임이 아니라 컴파일에서 잡힌다.
@@ -211,19 +216,32 @@ export class BackfillService implements OnApplicationBootstrap, OnModuleDestroy,
     }
   }
 
-  /** 공통 실행 엔진: 갭 탐지 → 진행 중 구간 제외 → job 생성 → 동시성 제한 실행. */
+  /**
+   * 공통 실행 엔진: 갭 탐지 → 진행 중 구간 제외 → job 생성 → 동시성 제한 실행.
+   *
+   * `force`가 켜지면 갭 탐지를 건너뛰고 구간 전체를 다시 받는다.
+   * 갭 탐지는 open_time 의 **존재 여부**만 보므로, 행이 있지만 내용이 불완전한 경우
+   * (WS 미확정 봉이 저장된 직후 연결이 끊겨 최종본을 못 받은 경우)를 찾아내지 못한다.
+   * 그런 구간은 존재 여부와 무관하게 REST 원본으로 덮어써야 복구된다.
+   */
   private async runWindow(
     symbol: SupportedSymbol,
     windowStartMs: number,
     windowEndMs: number,
     reason: BackfillReason,
+    options: { readonly force?: boolean } = {},
   ): Promise<BackfillRunSummary> {
-    const gaps = await this.gapDetector.detectGaps(
-      symbol,
-      BASE_INTERVAL,
-      new Date(windowStartMs),
-      new Date(windowEndMs),
-    );
+    const gaps =
+      options.force === true
+        ? windowStartMs < windowEndMs
+          ? [{ startMs: windowStartMs, endMs: windowEndMs }]
+          : []
+        : await this.gapDetector.detectGaps(
+            symbol,
+            BASE_INTERVAL,
+            new Date(windowStartMs),
+            new Date(windowEndMs),
+          );
     const { runnable, skipped } = this.splitByInFlight(symbol, gaps);
     if (skipped.length > 0) {
       this.logger.debug(`${symbol}: 이미 진행 중인 구간 ${skipped.length}개 건너뜀`);
@@ -245,6 +263,66 @@ export class BackfillService implements OnApplicationBootstrap, OnModuleDestroy,
       };
     } finally {
       this.untrackRanges(symbol, runnable);
+    }
+  }
+
+  /**
+   * WS 재연결 시 다운타임 구간을 강제로 다시 받는다.
+   *
+   * 왜 갭 스캔만으로 부족한가:
+   * ingest 는 미확정 봉도 upsert 해 실시간 차트를 움직인다. 그 직후 연결이 끊기면
+   * 해당 분봉은 "부분 스냅샷 상태로 존재"하게 되는데, Binance kline 스트림은 재연결 후
+   * 진행 중인 봉만 보내므로 그 봉의 최종본은 영영 오지 않는다.
+   * 갭 탐지는 행의 존재 여부만 보기 때문에 이 봉을 갭으로 잡지 못하고,
+   * 결과적으로 커버리지는 100% 로 보이는데 값은 오염된 상태가 영구히 남는다.
+   *
+   * 그래서 끊김 직전 봉부터 복구 시점까지를 force 모드로 다시 받는다.
+   * upsert 의 단조 증가 가드(trade_count/volume) 덕분에 이미 완전한 행을 다시 써도 안전하다.
+   */
+  @OnEvent(AppEvents.STREAM_STATUS)
+  handleStreamStatus(payload: StreamStatusPayload): void {
+    // 재연결(연결 복구) 시점만 처리한다.
+    if (!payload.connected) {
+      return;
+    }
+    // 같은 이벤트가 스트림 수만큼 발행되므로 kline 스트림만 받아 심볼당 1회로 줄인다.
+    const symbol = parseSymbolFromKlineStreamKey(payload.streamKey, this.symbols);
+    if (symbol === null) {
+      return;
+    }
+    const disconnectedAt = readIsoDate(payload.meta?.['disconnectedAt']);
+    if (disconnectedAt === null) {
+      // 최초 연결(ws_open)에는 끊김 구간이 없다 — 기동 백필이 담당한다.
+      return;
+    }
+    const reconnectedAt = readIsoDate(payload.meta?.['reconnectedAt']) ?? payload.at;
+    void this.repairDowntimeWindow(symbol, disconnectedAt, reconnectedAt);
+  }
+
+  /** 다운타임 구간 강제 복구. 실패해도 주기 갭 스캔이 남은 누락을 다시 시도한다. */
+  private async repairDowntimeWindow(
+    symbol: SupportedSymbol,
+    disconnectedAt: Date,
+    reconnectedAt: Date,
+  ): Promise<void> {
+    // 끊긴 시점이 속한 봉이 부분 저장됐을 수 있으므로 그 봉부터 포함한다.
+    const startMs = floorToStep(disconnectedAt.getTime(), BASE_INTERVAL_MS);
+    // 복구 시점이 속한 봉은 아직 진행 중이므로 제외한다 (다음 갭 스캔이 확정 후 처리).
+    const endMs = floorToStep(reconnectedAt.getTime(), BASE_INTERVAL_MS);
+    if (startMs >= endMs) {
+      return;
+    }
+
+    this.logger.log(
+      `${symbol} 다운타임 구간 강제 복구 시작 ` +
+        `(${new Date(startMs).toISOString()} ~ ${new Date(endMs).toISOString()})`,
+    );
+    try {
+      const summary = await this.runWindow(symbol, startMs, endMs, 'gap_recovery', { force: true });
+      const written = summary.jobs.reduce((acc, job) => acc + job.rowsWritten, 0);
+      this.logger.log(`${symbol} 다운타임 구간 강제 복구 완료 (${written}행)`);
+    } catch (error) {
+      this.logger.error(`${symbol} 다운타임 구간 강제 복구 실패: ${toErrorMessage(error)}`);
     }
   }
 
