@@ -15,6 +15,7 @@ import { DRIZZLE, type Database } from '../db/db.tokens';
 import { IngestStateStore } from './ingest-state.store';
 import { IngestService } from './ingest.service';
 import { OpsEventRecorder } from './ops-event.recorder';
+import { TradeRetentionService } from './trade-retention.service';
 
 @Module({
   imports: [ConfigModule, BinanceModule],
@@ -30,6 +31,7 @@ import { OpsEventRecorder } from './ops-event.recorder';
       inject: [DRIZZLE],
     },
     IngestService,
+    TradeRetentionService,
   ],
   exports: [IngestService],
 })
