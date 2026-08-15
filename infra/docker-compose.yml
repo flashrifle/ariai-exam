@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: ariai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ariai
+      POSTGRES_PASSWORD: ariai_local_pw
+      POSTGRES_DB: ariai
+      # 시계열 정렬 성능을 위해 UTC 고정
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      # 호스트의 기본 5432가 다른 Postgres에 점유된 환경을 고려해 5434로 노출한다.
+      # 컨테이너 내부 포트는 5432 그대로이므로 컨테이너 간 통신에는 영향이 없다.
+      - '${POSTGRES_HOST_PORT:-5434}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ariai -d ariai']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    command:
+      - postgres
+      # 시계열 대량 삽입 워크로드에 맞춘 최소 튜닝
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - max_wal_size=2GB
+
+volumes:
+  postgres-data:

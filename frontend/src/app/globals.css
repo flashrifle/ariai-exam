@@ -1,0 +1,395 @@
+@import "tailwindcss";
+
+/* ══════════════════════════════════════════════════════════════════════
+   디자인 방향: "Bloomberg 터미널 × Swiss 그리드"
+
+   · 다크 팔레트는 기본값이 아니라 도메인 선택이다. 트레이딩 운영 콘솔은
+     장시간 응시 · 저조도 환경 · 색 신호 대비를 전제로 하므로 잉크 배경 위
+     저채도 표면 + 고채도 신호색 조합이 읽기 부담이 가장 적다.
+   · 수치 타이포가 주인공이다. 모든 숫자는 등폭 + tabular-nums 로
+     자릿수가 흔들리지 않는다.
+   · 그리드는 Swiss 식으로 엄격하되, 카드 크기는 정보 밀도에 따라 다르다.
+   ══════════════════════════════════════════════════════════════════════ */
+
+@theme {
+  /* ── 표면 (잉크 → 패널 → 입력) ────────────────────────────── */
+  --color-ink-950: oklch(12.8% 0.011 258);
+  --color-ink-900: oklch(15.4% 0.012 258);
+  --color-ink-850: oklch(17.8% 0.013 258);
+  --color-ink-800: oklch(21% 0.014 258);
+  --color-ink-700: oklch(26% 0.014 258);
+
+  /* ── 헤어라인 (Swiss 그리드의 뼈대) ────────────────────────── */
+  --color-hairline: oklch(28% 0.012 258);
+  --color-hairline-strong: oklch(40% 0.015 258);
+
+  /* ── 전경 3단계 ────────────────────────────────────────────── */
+  --color-fg: oklch(95% 0.004 258);
+  --color-fg-muted: oklch(75% 0.009 258);
+  --color-fg-dim: oklch(58% 0.011 258);
+
+  /* ── 신호색: 의미 단위로만 사용한다 ────────────────────────── */
+  --color-amber: oklch(82% 0.145 78); /* 터미널 액센트 · 주의 */
+  --color-bull: oklch(78% 0.15 158); /* 상승 · 정상 */
+  --color-bear: oklch(68% 0.19 24); /* 하락 · 장애 */
+  --color-info: oklch(75% 0.11 236); /* 정보 · 중립 지표 */
+
+  /* ── 타이포 ────────────────────────────────────────────────── */
+  --font-sans:
+    "Helvetica Neue", Helvetica, Arial, "Pretendard", "Apple SD Gothic Neo",
+    "Malgun Gothic", system-ui, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", "Roboto Mono",
+    Menlo, Consolas, monospace;
+
+  --text-micro: 0.625rem; /* 10px — 대문자 라벨 */
+  --text-micro--line-height: 1.1;
+  --text-2xs: 0.6875rem; /* 11px — 표 셀 */
+  --text-2xs--line-height: 1.25;
+  --text-hero: clamp(2.5rem, 1.4rem + 2.6vw, 4rem); /* 현재가 */
+  --text-hero--line-height: 0.92;
+  --text-display: clamp(1.75rem, 1.2rem + 1.2vw, 2.5rem); /* 커버리지 등 */
+  --text-display--line-height: 0.95;
+
+  /* ── 모션 ──────────────────────────────────────────────────── */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --radius-panel: 2px;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-ink-950);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Swiss 그리드의 잔상: 화면 전체에 아주 옅은 4mm 격자 */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.5;
+    background-image:
+      repeating-linear-gradient(
+        to right,
+        oklch(100% 0 0 / 0.016) 0 1px,
+        transparent 1px 96px
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        oklch(100% 0 0 / 0.012) 0 1px,
+        transparent 1px 96px
+      );
+  }
+
+  /* 숫자는 절대 자릿수가 흔들리면 안 된다 */
+  :where(table, .num, input, .font-mono) {
+    font-variant-numeric: tabular-nums slashed-zero;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-amber);
+    outline-offset: 2px;
+    border-radius: 1px;
+  }
+
+  ::selection {
+    background: var(--color-amber);
+    color: var(--color-ink-950);
+  }
+
+  /* 스크롤바도 계기판 부품처럼 */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-ink-950);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-ink-700);
+    border: 3px solid var(--color-ink-950);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-hairline-strong);
+  }
+}
+
+@layer components {
+  /* ── 패널: 모든 정보 블록의 기본 그릇 ────────────────────── */
+  .panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background-color: var(--color-ink-900);
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-panel);
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--color-hairline);
+    background-color: var(--color-ink-850);
+  }
+
+  .panel-body {
+    flex: 1;
+    min-height: 0;
+    padding: 0.75rem;
+  }
+
+  /* ── 마이크로 라벨: 터미널 특유의 자간 넓은 소문자 표식 ──── */
+  .label-micro {
+    font-family: var(--font-mono);
+    font-size: var(--text-micro);
+    line-height: 1.1;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-fg-dim);
+    white-space: nowrap;
+  }
+
+  .label-micro-strong {
+    color: var(--color-fg-muted);
+  }
+
+  /* ── 수치 ─────────────────────────────────────────────────── */
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums slashed-zero;
+    letter-spacing: -0.01em;
+  }
+
+  /* ── 값 갱신 플래시: transform/opacity 만 건드린다 ────────── */
+  .flash-host {
+    position: relative;
+    display: inline-flex;
+    align-items: baseline;
+    isolation: isolate;
+  }
+
+  .flash-overlay {
+    position: absolute;
+    inset: -0.15em -0.35em;
+    z-index: -1;
+    opacity: 0;
+    pointer-events: none;
+    border-radius: 1px;
+  }
+
+  .flash-overlay[data-dir="up"] {
+    background-color: var(--color-bull);
+  }
+  .flash-overlay[data-dir="down"] {
+    background-color: var(--color-bear);
+  }
+  .flash-overlay[data-dir="flat"] {
+    background-color: var(--color-fg-dim);
+  }
+
+  /* ── 상태 점: 항상 텍스트 라벨과 함께 쓴다 ───────────────── */
+  .status-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    flex: none;
+    border-radius: 9999px;
+    background-color: var(--color-fg-dim);
+  }
+
+  .status-dot[data-tone="ok"] {
+    background-color: var(--color-bull);
+  }
+  .status-dot[data-tone="warn"] {
+    background-color: var(--color-amber);
+  }
+  .status-dot[data-tone="down"] {
+    background-color: var(--color-bear);
+  }
+
+  .status-dot[data-live="true"] {
+    animation: dot-pulse 2s var(--ease-out-expo) infinite;
+  }
+
+  @keyframes dot-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+
+  /* ── 데이터 테이블: 헤어라인만으로 구분 ─────────────────── */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+  }
+
+  .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 0.375rem 0.5rem;
+    text-align: left;
+    font-weight: 400;
+    font-size: var(--text-micro);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-fg-dim);
+    background-color: var(--color-ink-850);
+    border-bottom: 1px solid var(--color-hairline);
+  }
+
+  .data-table tbody td {
+    padding: 0.375rem 0.5rem;
+    border-bottom: 1px solid oklch(from var(--color-hairline) l c h / 0.55);
+    color: var(--color-fg-muted);
+    white-space: nowrap;
+  }
+
+  .data-table tbody tr:hover td {
+    background-color: var(--color-ink-850);
+    color: var(--color-fg);
+  }
+
+  /* ── 입력 ─────────────────────────────────────────────────── */
+  .field {
+    width: 100%;
+    padding: 0.4375rem 0.5rem;
+    background-color: var(--color-ink-800);
+    border: 1px solid var(--color-hairline);
+    border-radius: 1px;
+    color: var(--color-fg);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    transition: border-color 150ms var(--ease-out-expo);
+  }
+
+  .field:hover:not(:disabled) {
+    border-color: var(--color-hairline-strong);
+  }
+
+  .field:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .field[aria-invalid="true"] {
+    border-color: var(--color-bear);
+  }
+
+  /* ── 버튼: 터미널 액션 키 느낌 ───────────────────────────── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    border: 1px solid var(--color-hairline-strong);
+    border-radius: 1px;
+    background-color: var(--color-ink-800);
+    color: var(--color-fg);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition:
+      transform 120ms var(--ease-out-expo),
+      opacity 120ms var(--ease-out-expo);
+  }
+
+  .btn:hover:not(:disabled) {
+    border-color: var(--color-amber);
+    color: var(--color-amber);
+  }
+
+  .btn:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background-color: var(--color-amber);
+    border-color: var(--color-amber);
+    color: var(--color-ink-950);
+    font-weight: 600;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    color: var(--color-ink-950);
+    opacity: 0.88;
+  }
+
+  /* ── 세그먼티드 토글 (심볼 · 인터벌) ────────────────────── */
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--color-hairline);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+
+  .seg-item {
+    padding: 0.3125rem 0.625rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.08em;
+    color: var(--color-fg-dim);
+    background-color: transparent;
+    cursor: pointer;
+    transition: color 120ms var(--ease-out-expo);
+  }
+
+  .seg-item + .seg-item {
+    border-left: 1px solid var(--color-hairline);
+  }
+
+  .seg-item:hover {
+    color: var(--color-fg);
+    background-color: var(--color-ink-850);
+  }
+
+  .seg-item[aria-pressed="true"],
+  .seg-item[aria-selected="true"] {
+    color: var(--color-ink-950);
+    background-color: var(--color-fg);
+    font-weight: 600;
+  }
+}
+
+@utility scroll-shell {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* 접근성: 모션 민감 사용자는 플래시·전환을 전부 끈다 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

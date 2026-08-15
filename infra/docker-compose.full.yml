@@ -1,0 +1,109 @@
+# ─────────────────────────────────────────────────────────────
+# infra/docker-compose.full.yml
+# 전체 스택(postgres + backend + frontend)을 한 번에 기동하는 파일.
+#
+# 기존 infra/docker-compose.yml(Postgres 단독)은 "DB만 띄우고 backend/frontend는
+# 로컬 npm 으로 개발"하는 로컬 개발 워크플로용으로 그대로 유지한다. 이 파일은
+# "전체 스택을 도커로 한 번에 검증"하는 용도의 별도 파일이다.
+#
+# 실행: docker compose -f infra/docker-compose.full.yml up -d --build
+#       (루트에서는 `make up` 으로 동일하게 실행 가능)
+# ─────────────────────────────────────────────────────────────
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: ariai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ariai
+      POSTGRES_PASSWORD: ariai_local_pw
+      POSTGRES_DB: ariai
+      # 시계열 정렬 성능을 위해 UTC 고정
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ariai -d ariai']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - max_wal_size=2GB
+    networks:
+      - ariai-net
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ariai-backend
+    restart: unless-stopped
+    depends_on:
+      # postgres 컨테이너가 "실행됨"이 아니라 healthcheck를 통과해 "healthy" 상태가
+      # 될 때까지 backend 기동을 대기시킨다. 그렇지 않으면 PG가 accept-connections
+      # 상태가 되기 전에 backend가 먼저 접속을 시도해 실패할 수 있다.
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      CORS_ORIGIN: http://localhost:3000
+      # ⚠️ 함정 주의: 이것은 컨테이너 간 통신이다. .env(로컬 개발용)의 DATABASE_URL은
+      # 호스트에서 backend를 로컬로 띄우고 postgres만 도커로 띄울 때를 위해
+      # host=localhost 를 쓰지만, 여기서는 backend 자신도 컨테이너이므로
+      # 'localhost'는 backend 컨테이너 자기 자신을 가리켜 연결이 실패한다.
+      # 반드시 도커 네트워크 내부 DNS 이름인 서비스명 'postgres'를 host로 사용해야 한다.
+      DATABASE_URL: postgresql://ariai:ariai_local_pw@postgres:5432/ariai
+      DB_POOL_MAX: 10
+      BINANCE_REST_BASE_URL: https://api.binance.com
+      BINANCE_WS_BASE_URL: wss://stream.binance.com:9443
+      SYMBOLS: BTCUSDT,ETHUSDT
+      BOOTSTRAP_BACKFILL_DAYS: 3
+      GAP_SCAN_INTERVAL_SEC: 60
+      GAP_SCAN_LOOKBACK_HOURS: 24
+      REST_WEIGHT_BUDGET_PER_MIN: 2400
+      TRADE_FLUSH_INTERVAL_MS: 1000
+      TRADE_FLUSH_MAX_ROWS: 500
+      METRICS_REFRESH_MS: 2000
+      METRICS_WINDOW_MINUTES: 60
+      TRADE_RETENTION_DAYS: 7
+    ports:
+      - '4000:4000'
+    networks:
+      - ariai-net
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        # ⚠️ 함정 주의: NEXT_PUBLIC_* 값은 서버 사이드가 아니라 "브라우저"가 읽는
+        # 값이며 Next.js 빌드 타임에 클라이언트 번들 안에 고정 문자열로 인라인된다.
+        # 브라우저는 도커 네트워크 밖(사용자 호스트)에서 실행되므로 컨테이너명인
+        # 'backend'가 아니라, 호스트에 매핑된 포트 주소인
+        # http://localhost:4000/api/v1 을 사용해야 한다. ('backend'로 설정하면
+        # 브라우저가 그 호스트명을 못 찾아 API 호출이 전부 실패한다.)
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:4000/api/v1
+    container_name: ariai-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - '3000:3000'
+    networks:
+      - ariai-net
+
+networks:
+  ariai-net:
+    driver: bridge
+
+volumes:
+  postgres-data:

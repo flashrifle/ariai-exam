@@ -1,0 +1,36 @@
+# 의존성
+node_modules/
+.pnp
+.pnp.js
+
+# 빌드 산출물
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# 환경변수 (절대 커밋 금지)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# 테스트/커버리지
+coverage/
+*.lcov
+
+# 로그
+logs/
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# 에디터/OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 도커 볼륨 (로컬 데이터)
+infra/data/
