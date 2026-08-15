@@ -35,17 +35,16 @@ import {
 } from './stream-message.parser';
 import { TradeBuffer } from './trade-buffer';
 
-/** 운영 API(/ops/health)가 사용하는 스트림별 상태 스냅샷. */
-export interface StreamHealthSnapshot {
-  streamKey: string;
-  connected: boolean;
-  /** 마지막 수신 시각 (로컬 wall-clock). */
-  lastEventAt: Date | null;
-  /** 마지막 이벤트의 거래소 시각. */
-  lastEventTime: Date | null;
-  /** 마지막 수신 이후 경과(ms). 수신 이력이 없으면 null. */
-  lagMs: number | null;
-}
+import type { IngestPort, StreamHealthSnapshot } from '../common/ports';
+
+/**
+ * 운영 API(/ops/health)가 사용하는 스트림별 상태 스냅샷.
+ *
+ * 타입 정의는 `common/ports/ingest.port.ts`가 단일 진실 공급원이므로 그대로 재수출한다.
+ * 여기서 같은 이름의 인터페이스를 따로 선언하면 구조적 타이핑 탓에 컴파일은 통과하면서
+ * 런타임 필드만 어긋난다 (실제로 symbol·kind 누락 사고가 있었다).
+ */
+export type { StreamHealthSnapshot };
 
 /** 파이프라인 내부 통계 (운영 진단용). */
 export interface IngestStats {
@@ -58,6 +57,9 @@ export interface IngestStats {
 }
 
 interface MutableStreamHealth {
+  /** streamKey에서 매번 파싱하지 않도록 등록 시점에 함께 보관한다. */
+  symbol: SupportedSymbol;
+  kind: 'kline' | 'trade';
   lastEventAt: Date | null;
   lastEventTime: Date | null;
 }
@@ -65,7 +67,7 @@ interface MutableStreamHealth {
 type FlushReason = 'interval' | 'maxRows' | 'shutdown';
 
 @Injectable()
-export class IngestService implements OnModuleInit, OnModuleDestroy {
+export class IngestService implements OnModuleInit, OnModuleDestroy, IngestPort {
   private readonly logger = new Logger(IngestService.name);
   private readonly symbols: readonly SupportedSymbol[];
   private readonly flushIntervalMs: number;
@@ -108,8 +110,18 @@ export class IngestService implements OnModuleInit, OnModuleDestroy {
     ]);
     this.streamsLabel = streams.join('/');
     for (const symbol of this.symbols) {
-      this.health.set(klineStreamKey(symbol), { lastEventAt: null, lastEventTime: null });
-      this.health.set(tradeStreamKey(symbol), { lastEventAt: null, lastEventTime: null });
+      this.health.set(klineStreamKey(symbol), {
+        symbol,
+        kind: 'kline',
+        lastEventAt: null,
+        lastEventTime: null,
+      });
+      this.health.set(tradeStreamKey(symbol), {
+        symbol,
+        kind: 'trade',
+        lastEventAt: null,
+        lastEventTime: null,
+      });
     }
     this.wsClient.start(streams, {
       onMessage: (raw) => this.handleRawMessage(raw),
@@ -144,10 +156,12 @@ export class IngestService implements OnModuleInit, OnModuleDestroy {
     const now = Date.now();
     return [...this.health.entries()].map(([streamKey, health]) => ({
       streamKey,
+      symbol: health.symbol,
+      kind: health.kind,
       connected: this.connected,
       lastEventAt: health.lastEventAt,
-      lastEventTime: health.lastEventTime,
-      lagMs: health.lastEventAt ? now - health.lastEventAt.getTime() : null,
+      // 계약상 초 단위. API 레이어가 응답 시각 기준으로 다시 계산하지만, 여기서도 채워 둔다.
+      lagSeconds: health.lastEventAt ? (now - health.lastEventAt.getTime()) / 1000 : null,
     }));
   }
 
@@ -220,7 +234,13 @@ export class IngestService implements OnModuleInit, OnModuleDestroy {
   }
 
   private touchHealth(streamKey: string, eventTime: Date): void {
-    this.health.set(streamKey, { lastEventAt: new Date(), lastEventTime: eventTime });
+    const current = this.health.get(streamKey);
+    if (current === undefined) {
+      // 등록되지 않은 스트림의 메시지 — 구독 목록과 파서가 어긋난 상황이므로 조용히 넘기지 않는다.
+      this.logger.warn(`등록되지 않은 스트림의 이벤트를 수신했습니다: ${streamKey}`);
+      return;
+    }
+    this.health.set(streamKey, { ...current, lastEventAt: new Date(), lastEventTime: eventTime });
   }
 
   // ── 배치 flush ─────────────────────────────────────────────────────────

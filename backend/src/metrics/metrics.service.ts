@@ -14,6 +14,7 @@ import {
   type SupportedInterval,
   type SupportedSymbol,
 } from '../config/configuration';
+import type { MetricsPort, MetricsSeriesQuery } from '../common/ports';
 import { DRIZZLE, type Database } from '../db/db.tokens';
 import { buildCandlesQuery, mapCandleRow, type CandleRow } from './candle-aggregation';
 import { MetricsCacheService } from './metrics-cache.service';
@@ -29,7 +30,8 @@ import type { Candle, MetricSeries, MetricsOverview } from './metrics.types';
 import { buildSeriesQuery, mapSeriesRows, type SeriesRow } from './series.query';
 
 @Injectable()
-export class MetricsService {
+// MetricsPort 를 명시적으로 구현해 API 레이어와의 시그니처 불일치를 컴파일 단계에서 잡는다.
+export class MetricsService implements MetricsPort {
   private readonly config: MetricsRuntimeConfig;
 
   constructor(
@@ -55,8 +57,13 @@ export class MetricsService {
     return (result.rows as unknown as CandleRow[]).map(mapCandleRow);
   }
 
-  /** 지표 시계열 — GET /metrics/series?symbol&metric&window */
-  async getSeries(symbol: string, metric: string, window?: string): Promise<MetricSeries> {
+  /**
+   * 지표 시계열 — GET /metrics/series?symbol&metric&window
+   *
+   * 인자는 MetricsPort 계약에 맞춰 객체 하나로 받는다.
+   * (호출부인 API 레이어가 포트 타입으로 주입받으므로 시그니처가 어긋나면 컴파일이 깨져야 한다.)
+   */
+  async getSeries({ symbol, metric, window }: MetricsSeriesQuery): Promise<MetricSeries> {
     const validSymbol = assertSymbol(symbol);
     const validMetric = assertMetric(metric);
     const minutes = parseWindowToMinutes(window, this.config.windowMinutes);

@@ -15,6 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { AppEvents, type GapDetectedPayload } from '../common/events';
+import type { BackfillPort, ManualBackfillResult } from '../common/ports';
 import {
   BASE_INTERVAL,
   BASE_INTERVAL_MS,
@@ -48,7 +49,8 @@ import { runWithConcurrency } from './async-util';
 import { resolveStartupPlan } from './startup-plan';
 
 @Injectable()
-export class BackfillService implements OnApplicationBootstrap, OnModuleDestroy {
+// BackfillPort 를 명시적으로 구현한다 — 포트와 구현이 어긋나면 런타임이 아니라 컴파일에서 잡힌다.
+export class BackfillService implements OnApplicationBootstrap, OnModuleDestroy, BackfillPort {
   private readonly logger = new Logger(BackfillService.name);
 
   private readonly symbols: readonly SupportedSymbol[];
@@ -142,6 +144,37 @@ export class BackfillService implements OnApplicationBootstrap, OnModuleDestroy 
     const startMs = floorToStep(request.from.getTime(), BASE_INTERVAL_MS);
     const endMs = ceilToStep(request.to.getTime(), BASE_INTERVAL_MS);
     return this.runWindow(request.symbol, startMs, endMs, 'manual');
+  }
+
+  /**
+   * 포트 계약(BackfillPort) 구현 — 운영 API의 수동 트리거 진입점.
+   *
+   * runManual()은 갭 탐지 결과에 따라 job 을 0개 이상 만들지만,
+   * API 는 "이 요청이 어떻게 처리됐는가"를 가리키는 job 하나를 필요로 한다.
+   * 채울 갭이 없어 job 이 생기지 않았다면 그 사실 자체를 0행 job 으로 남긴다 —
+   * 운영자가 요청을 보냈는데 이력에 아무것도 없는 상황을 만들지 않기 위해서다.
+   */
+  async enqueueManual(request: ManualBackfillRequest): Promise<ManualBackfillResult> {
+    const summary = await this.runManual(request);
+    const firstJob = summary.jobs.at(0);
+    if (firstJob !== undefined) {
+      return { jobId: firstJob.jobId };
+    }
+
+    const job = await this.jobRepository.create({
+      symbol: request.symbol,
+      interval: request.interval,
+      rangeStart: request.from,
+      rangeEnd: request.to,
+      reason: 'manual',
+    });
+    await this.jobRepository.markRunning(job.id);
+    await this.jobRepository.markSucceeded(job.id, 0);
+    this.logger.log(
+      `수동 백필: 요청 구간에 채울 갭이 없어 job ${job.id}을(를) 0행으로 기록했습니다 ` +
+        `(${request.symbol}, ${request.from.toISOString()} ~ ${request.to.toISOString()})`,
+    );
+    return { jobId: job.id };
   }
 
   /** 기동 시퀀스: bootstrap/다운타임 복구 → 즉시 1회 갭 스캔. */
