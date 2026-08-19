@@ -178,15 +178,23 @@
 ## 3. 캔들 파생 집계 규칙 (5m / 15m / 1h)
 
 1분봉만 저장하고 상위 인터벌은 조회 시 순수 PostgreSQL 로 파생한다 (TimescaleDB 미사용).
+구현은 `backend/src/api/candles/candles.service.ts` 한 곳이다.
 
-- **시간 버킷**: `to_timestamp(floor(extract(epoch from open_time) / N) * N)` (N = 버킷 초).
-  1분봉 `open_time` 이 분 경계에 정렬돼 있으므로(CONTRACT 7절) 버킷 경계도 정확히 맞는다.
+- **시간 버킷**: `date_bin(<interval>, open_time, TIMESTAMPTZ 'epoch')`.
+  origin 을 epoch 로 고정해 서버 타임존과 무관하게 버킷 경계가 결정된다.
+  1분봉 `open_time` 이 분 경계에 정렬돼 있으므로(CONTRACT 7절) 5m/15m/1h 경계도 정확히 맞는다.
 - **open / close 는 시간 순서 기준 첫/마지막이다** — `min`/`max` 가격이 아니다.
-  `first_value(open)` / `last_value(close)` 윈도우 함수를 쓰되, **프레임을
-  `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` 로 명시**한다.
-  기본 프레임은 `... AND CURRENT ROW` 까지라 `last_value` 가 "현재 행의 close"를 돌려주는
-  잘 알려진 함정이 있고, 이를 명시적 프레임으로 방지했다.
+  ```sql
+  (array_agg(open  ORDER BY open_time ASC ))[1] AS open,
+  (array_agg(close ORDER BY open_time DESC))[1] AS close
+  ```
+  `first_value`/`last_value` 윈도우 함수 대신 이 방식을 쓴 이유: 윈도우 함수는 기본 프레임이
+  `... AND CURRENT ROW` 까지라 `last_value` 가 "현재 행의 close"를 돌려주는 잘 알려진 함정이 있다.
+  프레임을 `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` 로 명시하면 해결되지만,
+  `array_agg` + 명시적 `ORDER BY` 는 **그 함정 자체가 성립하지 않아** 실수 여지가 더 적다.
 - **high = MAX, low = MIN, volume·quoteVolume·tradeCount·takerBuyQuote = SUM** (전부 numeric).
+- **스캔 범위 제한**: 최신 버킷을 먼저 구한 뒤 `limit` 개 버킷 분량만 스캔한다.
+  파생 집계가 전체 테이블을 훑지 않도록 하기 위함이다.
 - **진행 중 버킷 포함**: 가장 최신 버킷은 아직 채워지는 중일 수 있다(예: 1h 버킷에 12분치만 존재).
   실시간 차트의 자연스러운 동작이며, 확정 여부는 버킷 시각으로 판별 가능하다.
 

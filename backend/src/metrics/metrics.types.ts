@@ -1,7 +1,7 @@
 /**
  * 지표 모듈 출력 계약.
  *
- * frontend/src/types/api.ts 의 `MetricsOverview` / `Candle` / `MetricSeries` 와
+ * frontend/src/types/api.ts 의 `MetricsOverview` / `MetricSeries` 와
  * 필드명·의미가 1:1 로 일치해야 한다 (docs/CONTRACT.md 5절).
  * 백엔드는 프론트 소스를 import 할 수 없으므로 여기에 동일한 형태로 정의하고,
  * 프론트 타입이 바뀌면 이 파일도 함께 맞춘다.
@@ -9,22 +9,6 @@
 import type { SupportedSymbol } from '../config/configuration';
 
 /** 캔들 1개. 1m 은 원본, 5m/15m/1h 는 SQL 파생 집계 결과다. */
-export interface Candle {
-  /** 버킷 시작 시각 (ISO 8601 UTC) */
-  openTime: string;
-  /** 버킷 내 마지막 1분봉의 close_time (ISO 8601 UTC) */
-  closeTime: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-  quoteVolume: number;
-  tradeCount: number;
-  takerBuyQuote: number;
-}
-
-/** 지표 카드 스냅샷. 각 지표의 정의·선정 근거는 docs/METRICS.md 참조. */
 export interface MetricsOverview {
   symbol: SupportedSymbol;
   /** 스냅샷 계산 시각 (DB now(), ISO 8601 UTC) */

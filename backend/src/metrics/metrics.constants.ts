@@ -47,8 +47,6 @@ export const SERIES_METRICS = [
 export type SeriesMetric = (typeof SERIES_METRICS)[number];
 
 /** 캔들 조회 기본/최대 개수. */
-export const DEFAULT_CANDLE_LIMIT = 200;
-export const MAX_CANDLE_LIMIT = 1000;
 
 /** 시계열 윈도우 상한(분) = 7일. trade 보존 기간(TRADE_RETENTION_DAYS 기본 7일)과 맞춘다. */
 export const MAX_WINDOW_MINUTES = 10_080;
