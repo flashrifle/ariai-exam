@@ -195,9 +195,15 @@ export class BackfillService implements OnApplicationBootstrap, OnModuleDestroy,
   /** 심볼 하나의 기동 판단 + 실행. */
   private async bootstrapSymbol(symbol: SupportedSymbol): Promise<void> {
     try {
-      const latest = await this.klineRepository.latestOpenTime(symbol, BASE_INTERVAL);
+      // earliest 도 함께 본다 — latest 만 보면 기동 직후 WS 가 저장한 현재 봉 때문에
+      // 과거가 텅 비어 있는데도 '이미 최신'으로 오판한다 (startup-plan.ts 주석 참조).
+      const [latest, earliest] = await Promise.all([
+        this.klineRepository.latestOpenTime(symbol, BASE_INTERVAL),
+        this.klineRepository.earliestOpenTime(symbol, BASE_INTERVAL),
+      ]);
       const plan = resolveStartupPlan(
         latest === null ? null : latest.getTime(),
+        earliest === null ? null : earliest.getTime(),
         Date.now(),
         BASE_INTERVAL_MS,
         this.bootstrapDays,

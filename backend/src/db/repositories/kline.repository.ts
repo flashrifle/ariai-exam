@@ -114,6 +114,23 @@ export class KlineRepository {
     return rows[0]?.openTime ?? null;
   }
 
+  /**
+   * 심볼별 가장 오래된 1분봉 open_time. 한 건도 없으면 null.
+   *
+   * 기동 백필 판단에 쓴다. `latestOpenTime` 만 보면 실시간 WS 가 방금 저장한 현재 봉 때문에
+   * "데이터가 있다 = 과거가 채워졌다"로 오판해 최초 백필을 건너뛴다.
+   */
+  async earliestOpenTime(symbol: string, interval: string): Promise<Date | null> {
+    const rows = await this.db
+      .select({ openTime: klines.openTime })
+      .from(klines)
+      .where(and(eq(klines.symbol, symbol), eq(klines.interval, interval)))
+      .orderBy(asc(klines.openTime))
+      .limit(1);
+
+    return rows[0]?.openTime ?? null;
+  }
+
   /** 구간 `[from, to]`(양끝 포함)의 캔들을 open_time 오름차순으로 조회한다. */
   async findRange(
     symbol: string,
