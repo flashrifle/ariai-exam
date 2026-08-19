@@ -74,8 +74,12 @@ export const trades = pgTable(
 );
 
 /**
- * 스트림별 수집 진행 지점. 재시작 시 "어디부터 비었는가"를 판단하는 기준점이다.
+ * 스트림별 마지막 수신 지점. `/ops/health` 의 수집 지연(lag) 표시에 사용한다.
  * streamKey 예: 'kline:BTCUSDT:1m', 'trade:BTCUSDT'
+ *
+ * 주의: **갭 판단의 기준은 이 테이블이 아니라 `klines` 다.**
+ * 이 테이블은 "받았다"를 기록하지만 `klines` 는 "저장됐다"를 뜻한다.
+ * 저장이 실패하면 여기만 앞서 나갈 수 있으므로, 실제 저장된 데이터를 기준으로 판단한다.
  */
 export const ingestState = pgTable('ingest_state', {
   streamKey: text('stream_key').primaryKey(),
